@@ -24,17 +24,25 @@ from smpl_sim.smpllib.smpl_local_robot import SMPL_Robot
 
 def add_visual_capsule(scene, point1, point2, radius, rgba):
     """Adds one capsule to an mjvScene."""
+    # 如果当前几何体数量已达上限，则不添加
     if scene.ngeom >= scene.maxgeom:
         return
     scene.ngeom += 1  # increment ngeom
     # initialise a new capsule, add it to the scene using mjv_makeConnector
-    mujoco.mjv_initGeom(scene.geoms[scene.ngeom-1],
-                        mujoco.mjtGeom.mjGEOM_CAPSULE, np.zeros(3),
-                        np.zeros(3), np.zeros(9), rgba.astype(np.float32))
-    mujoco.mjv_makeConnector(scene.geoms[scene.ngeom-1],
-                            mujoco.mjtGeom.mjGEOM_CAPSULE, radius,
-                            point1[0], point1[1], point1[2],
-                            point2[0], point2[1], point2[2])
+    mujoco.mjv_initGeom(scene.geoms[scene.ngeom-1],                         # 新增的几何体对象
+                        mujoco.mjtGeom.mjGEOM_CAPSULE,                      # 几何体类型为胶囊
+                        np.zeros(3),                                        # 初始位置为零
+                        np.zeros(3),                                        # 初始大小为零 
+                        np.zeros(9),                                        # 初始旋转为单位矩阵       
+                        rgba.astype(np.float32)                             # 设置颜色
+                        )  
+    # 设置胶囊体的连接点和半径
+    mujoco.mjv_makeConnector(scene.geoms[scene.ngeom-1],                    # 新增的几何体对象
+                            mujoco.mjtGeom.mjGEOM_CAPSULE,                  # 几何体类型为胶囊     
+                            radius,                                         # 设置胶囊的半径    
+                            point1[0], point1[1], point1[2],                # 设置胶囊的起始点坐标
+                            point2[0], point2[1], point2[2]                 # 设置胶囊的终止点坐标
+                            )
 
 def key_call_back( keycode):
     global curr_start, num_motions, motion_id, motion_acc, time_step, dt, paused
@@ -88,12 +96,12 @@ if __name__ == "__main__":
     }
     smpl_robot = SMPL_Robot(
         robot_cfg,
-        data_dir="data/smpl",
+        data_dir="/data/smpl",
     )
     
     gender_beta = np.zeros((17))
     smpl_robot.load_from_skeleton(betas=torch.from_numpy(gender_beta[None, 1:]), gender=gender_beta[0:1], objs_info=None)
-    test_good = f"/tmp/smpl/test_good.xml"
+    test_good = f"tmp/smpl/test_good.xml"
     smpl_robot.write_xml(test_good)
     smpl_robot.write_xml("test.xml")
     sk_tree = SkeletonTree.from_mjcf(test_good)
