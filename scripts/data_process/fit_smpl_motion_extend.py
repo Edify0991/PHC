@@ -25,7 +25,7 @@ from smpl_sim.utils.pytorch3d_transforms import axis_angle_to_matrix
 from torch.autograd import Variable
 from tqdm import tqdm
 from smpl_sim.smpllib.smpl_joint_names import SMPL_MUJOCO_NAMES, SMPL_BONE_ORDER_NAMES, SMPLH_BONE_ORDER_NAMES, SMPLH_MUJOCO_NAMES
-from phc.utils.torch_humanoid_batch_extend import Humanoid_Batch
+from phc.utils.torch_humanoid_batch import Humanoid_Batch
 from smpl_sim.utils.smoothing_utils import gaussian_kernel_1d, gaussian_filter_1d_batch
 from easydict import EasyDict
 import hydra
@@ -56,10 +56,7 @@ def process_motion(key_names, key_name_to_pkls, cfg):
     device = torch.device("cpu")
     
     humanoid_fk = Humanoid_Batch(cfg.robot) # load forward kinematics model
-    if hasattr(cfg.robot, "extend_config") and cfg.robot.extend_config is not None:
-        num_augment_joint = len(cfg.robot.extend_config)
-    else:
-        num_augment_joint = 0
+    num_augment_joint = len(cfg.robot.extend_config)
 
     #### Define corresonpdances between h1 and smpl joints
     robot_joint_names_augment = humanoid_fk.body_names_augment 
@@ -67,7 +64,7 @@ def process_motion(key_names, key_name_to_pkls, cfg):
     smpl_joint_pick = [i[1] for i in cfg.robot.joint_matches]
     robot_joint_pick_idx = [robot_joint_names_augment.index(j) for j in robot_joint_pick]
     smpl_joint_pick_idx = [SMPL_BONE_ORDER_NAMES.index(j) for j in smpl_joint_pick]
-
+    
     smpl_parser_n = SMPL_Parser(model_path="/data/smpl", gender="neutral")
     shape_new, scale = joblib.load(f"data/{cfg.robot.humanoid_type}/shape_optimized_v1.pkl") # TODO: run fit_smple_shape to get this
     
@@ -118,11 +115,10 @@ def process_motion(key_names, key_name_to_pkls, cfg):
 
         
         for iteration in range(cfg.get("fitting_iterations", 500)):
-            print(f"Processing {data_key} Iteration: {iteration}")
             pose_aa_h1_new = torch.cat([root_rot_new[None, :, None], humanoid_fk.dof_axis * dof_pos_new, torch.zeros((1, N, num_augment_joint, 3)).to(device)], axis = 2)
             fk_return = humanoid_fk.fk_batch(pose_aa_h1_new, root_trans_offset[None, ] + root_pos_offset )
             
-            # print('shape of fk_return.global_translation:', fk_return.global_translation.shape)
+            
             if num_augment_joint > 0:
                 diff = fk_return.global_translation_extend[:, :, robot_joint_pick_idx] - joints[:, smpl_joint_pick_idx]
             else:

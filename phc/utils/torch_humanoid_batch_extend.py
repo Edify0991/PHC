@@ -43,7 +43,7 @@ class Humanoid_Batch:
         joints = sorted([j.attrib['name'] for j in tree.getroot().find("worldbody").findall('.//joint')])
         motors = sorted([m.attrib['name'] for m in tree.getroot().find("actuator").getchildren()])
         print('heihei:', len(motors), len(joints))
-        # assert(len(motors) > 0, "No motors found in the mjcf file")
+        assert(len(motors) > 0, "No motors found in the mjcf file")
         
         self.num_dof = len(motors) 
         self.num_extend_dof = self.num_dof
@@ -80,12 +80,13 @@ class Humanoid_Batch:
 
         self.dof_axis = torch.tensor(self.dof_axis)
 
-        for extend_config in cfg.extend_config:
-            self.body_names_augment += [extend_config.joint_name]
-            self._parents = torch.cat([self._parents, torch.tensor([self.body_names.index(extend_config.parent_name)]).to(device)], dim = 0)
-            self._offsets = torch.cat([self._offsets, torch.tensor([[extend_config.pos]]).to(device)], dim = 1)
-            self._local_rotation = torch.cat([self._local_rotation, torch.tensor([[extend_config.rot]]).to(device)], dim = 1)
-            self.num_extend_dof += 1
+        if hasattr(cfg, "extend_config") and cfg.extend_config is not None:
+            for extend_config in cfg.extend_config:
+                self.body_names_augment += [extend_config.joint_name]
+                self._parents = torch.cat([self._parents, torch.tensor([self.body_names.index(extend_config.parent_name)]).to(device)], dim = 0)
+                self._offsets = torch.cat([self._offsets, torch.tensor([[extend_config.pos]]).to(device)], dim = 1)
+                self._local_rotation = torch.cat([self._local_rotation, torch.tensor([[extend_config.rot]]).to(device)], dim = 1)
+                self.num_extend_dof += 1
             
         self.num_bodies = len(self.body_names)
         self.num_bodies_augment = len(self.body_names_augment)
@@ -166,9 +167,8 @@ class Humanoid_Batch:
         B, seq_len = pose.shape[:2]
         # pose.shape: (B, seq_len, J, 3) where J is the number of joints
         # 虽然joint数目小于body数目，但是pose[..., :len(self._parents), :]不会扩展pose，所以第三维度仍为关节数
-        print("pose.shape:", pose.shape)
         pose = pose[..., :len(self._parents), :] # H1 fitted joints might have extra joints
-        print("lengh of parents:", len(self._parents), "pose.shape:", pose.shape)
+        # print("lengh of parents:", len(self._parents), "pose.shape:", pose.shape)
         if convert_to_mat:
             pose_quat = tRot.axis_angle_to_quaternion(pose.clone())
             pose_mat = tRot.quaternion_to_matrix(pose_quat)
@@ -179,12 +179,12 @@ class Humanoid_Batch:
             pose_mat = pose_mat.reshape(B, seq_len, -1, 3, 3)
         J = pose_mat.shape[2] - 1  # Exclude root
         wbody_pos, wbody_mat = self.forward_kinematics_batch(pose_mat[:, :, 1:], pose_mat[:, :, 0:1], trans)
-        
+        # print("shape of wbody_pos:", wbody_pos.shape, "wbody_mat:", wbody_mat.shape)
         return_dict = EasyDict()
         
         
         wbody_rot = tRot.wxyz_to_xyzw(tRot.matrix_to_quaternion(wbody_mat))
-        if len(self.cfg.extend_config) > 0:
+        if hasattr(self.cfg, "extend_config") and self.cfg.extend_config is not None and len(self.cfg.extend_config) > 0:
             if return_full:
                 return_dict.global_velocity_extend = self._compute_velocity(wbody_pos, dt) 
                 return_dict.global_angular_velocity_extend = self._compute_angular_velocity(wbody_rot, dt)
@@ -193,10 +193,11 @@ class Humanoid_Batch:
             return_dict.global_rotation_mat_extend = wbody_mat.clone()
             return_dict.global_rotation_extend = wbody_rot
             
+            # print("wbody_pos.shape:", wbody_pos.shape)
             wbody_pos = wbody_pos[..., :self.num_bodies, :]
             wbody_mat = wbody_mat[..., :self.num_bodies, :, :]
             wbody_rot = wbody_rot[..., :self.num_bodies, :]
-
+            # print("wbody_pos.shape:", wbody_pos.shape)
         
         return_dict.global_translation = wbody_pos
         return_dict.global_rotation_mat = wbody_mat
@@ -210,7 +211,7 @@ class Humanoid_Batch:
             return_dict.global_angular_velocity = rigidbody_angular_velocity
             return_dict.global_velocity = rigidbody_linear_velocity
             
-            if len(self.cfg.extend_config) > 0:
+            if hasattr(self.cfg, "extend_config") and self.cfg.extend_config is not None and len(self.cfg.extend_config) > 0:
                 return_dict.dof_pos = pose.sum(dim = -1)[..., 1:self.num_bodies] # you can sum it up since unitree's each joint has 1 dof. Last two are for hands. doesn't really matter. 
             else:
                 if not len(self.actuated_joints_idx) == len(self.body_names):
@@ -221,7 +222,17 @@ class Humanoid_Batch:
             dof_vel = ((return_dict.dof_pos[:, 1:] - return_dict.dof_pos[:, :-1] )/dt)
             return_dict.dof_vels = torch.cat([dof_vel, dof_vel[:, -2:-1]], dim = 1)
             return_dict.fps = int(1/dt)
-        
+
+        # 筛选出有驱动关节的世界位置和旋转
+        # joint_indices = self.actuated_joints_idx
+        # return_dict.global_translation = return_dict.global_translation[..., joint_indices, :]
+        # return_dict.global_rotation_mat = return_dict.global_rotation_mat[..., joint_indices, :, :]
+        # return_dict.global_rotation = return_dict.global_rotation[..., joint_indices, :]
+        # if return_full:
+        #     return_dict.global_velocity = return_dict.global_velocity[..., joint_indices, :]
+        #     return_dict.global_angular_velocity = return_dict.global_angular_velocity[..., joint_indices, :]
+        #     return_dict.local_rotation = return_dict.local_rotation[..., joint_indices, :]
+
         return return_dict
     
     def forward_kinematics_batch(self, rotations, root_rotations, root_positions):
@@ -241,35 +252,51 @@ class Humanoid_Batch:
 
         expanded_offsets = (self._offsets[:, None].expand(B, seq_len, J, 3).to(device).type(dtype))
 
-        # print("self._parents:", self._parents)
+        # print("rotations.shape:", rotations.shape)
         # print("root_rotations.shape:", root_rotations.shape)
 
         # for idx, (name, parent_idx) in enumerate(zip(self.body_names_augment, self._parents)):
         #     print(f"{idx}: {name}, parent_idx: {parent_idx}, parent_name: {self.body_names_augment[parent_idx] if parent_idx >= 0 else 'ROOT'}")
 
-        print(f"J: {J}, len(body_names_augment): {len(self.body_names_augment)}, len(_parents): {len(self._parents)}")
+        # print(f"J: {J}, len(body_names_augment): {len(self.body_names_augment)}, len(_parents): {len(self._parents)}")
+
+        actuated_set = set(self.actuated_joints_idx.tolist())
+        joint_ptr = 0  # 指向 rotations 的第几个元素
 
         for i in range(J):
-            print(f"i={i}, parent={self._parents[i]}, rotations_world_len={len(rotations_world)}")
+            # print(f"i={i}, parent={self._parents[i]}, rotations_world_len={len(rotations_world)}")
             if self._parents[i] == -1:
                 positions_world.append(root_positions)
                 rotations_world.append(root_rotations)
+                # print("shape of root_rotations:", rotations_world[-1].shape)
             else:
+                if i in actuated_set:
+                    # 该 body 有 joint，使用 rotations 的当前元素
+                    rot_local = rotations[:, :, joint_ptr, :, :]
+                    joint_ptr += 1
+                else:
+                    # 没有 joint，使用单位旋转
+                    rot_local = torch.eye(3, device=rotations.device, dtype=rotations.dtype).view(1, 1, 3, 3).expand(B, seq_len, 3, 3)
+                    # print("shape of rot_local:", rot_local.shape)
+                # 乘上本地静态旋转
+                local_rot_mat = self._local_rotation_mat[:, (i):(i + 1)].expand(B, seq_len, 3, 3)
+                # print("shape of local_rot_mat:", local_rot_mat.shape)
                 # print(f"rotations_world[{i}] shape:", rotations_world[self._parents[i]].shape)
-                print(f"rotations.shape: {rotations.shape}, i: {i}, (i-1):i = {(i-1, i)}")
-                print(f"rotations[:, :, (i-1):i, :].shape: {rotations[:, :, (i-1):i, :].shape}")
+                # print(f"rotations.shape: {rotations.shape}, i: {i}, (i-1):i = {(i-1, i)}")
+                # print(f"rotations[:, :, (i-1):i, :].shape: {rotations[:, :, (i-1):i, :].shape}")
                 
                 jpos = (torch.matmul(rotations_world[self._parents[i]][:, :, 0], expanded_offsets[:, :, i, :, None]).squeeze(-1) + positions_world[self._parents[i]])
-                rot_mat = torch.matmul(rotations_world[self._parents[i]], torch.matmul(self._local_rotation_mat[:,  (i):(i + 1)], rotations[:, :, (i - 1):i, :]))
+                rot_mat = torch.matmul(rotations_world[self._parents[i]], torch.matmul(local_rot_mat, rot_local).unsqueeze(2))
                 # rot_mat = torch.matmul(rotations_world[self._parents[i]], rotations[:, :, (i - 1):i, :])
                 # print(rotations[:, :, (i - 1):i, :].shape, self._local_rotation_mat.shape)
-                
+                # print("shape of jpos:", rotations_world[self._parents[i]].shape, "shape of rot_mat:",rot_mat.shape)
+
                 positions_world.append(jpos)
                 rotations_world.append(rot_mat)
         
         positions_world = torch.stack(positions_world, dim=2)
         rotations_world = torch.cat(rotations_world, dim=2)
-        print("shape of rotation_world:", rotations_world.shape)
+        # print("shape of positions_world:", positions_world.shape, "shape of rotations_world:", rotations_world.shape)
         return positions_world, rotations_world
     
     @staticmethod

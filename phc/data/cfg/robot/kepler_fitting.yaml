@@ -47,16 +47,16 @@ right_foot_name: 'right_ankle_roll'
 left_foot_name: 'left_ankle_roll'
 
 asset:
-  assetRoot: "./"
-  assetFileName: "phc/data/assets/robot/kepler/1230URDF.xml"
-  urdfFileName: "phc/data/assets/robot/kepler/urdf/1230URDF.urdf"
+  assetRoot: "/home/user/wmd/"
+  assetFileName: "/home/user/wmd/kepler/1230URDF.xml"
+  urdfFileName: "/home/user/wmd/kepler/urdf/1230URDF.urdf"
 
 
 extend_config:
-  - joint_name: "head_yaw"
-    parent_name: "waist_yaw"
-    pos: [0.0, 0.0, 0.0]
-    rot: [1.0, 0.0, 0.0, 0.0]
+  # - joint_name: "head_yaw"
+  #   parent_name: "waist_yaw"
+  #   pos: [0.0, 0.0, 0.0]
+  #   rot: [1.0, 0.0, 0.0, 0.0]
 
   # - joint_name: "left_toe_link"
   #   parent_name: "left_ankle_roll_link"
@@ -90,7 +90,7 @@ joint_matches:
 
 smpl_pose_modifier:
   - Pelvis: "[np.pi/2, 0, np.pi/2]"
-  - L_Shoulder: "[0, 0, -np.pi/2]"
+  - L_Shoulder: "[0, 0, np.pi/2]"
   - R_Shoulder: "[0, 0, np.pi/2]"
   # - L_Elbow: "[0, -np.pi/2, 0]"
   # - R_Elbow: "[0, np.pi/2, 0]"
