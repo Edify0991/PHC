@@ -48,7 +48,7 @@ class MotionLibSMPL(MotionLibBase):
     def __init__(self, motion_lib_cfg):
         super().__init__(motion_lib_cfg = motion_lib_cfg)
         
-        data_dir = "data/smpl"
+        data_dir = "/data/smpl"
         
         if osp.exists(data_dir):
             if motion_lib_cfg.smpl_type == "smpl":
@@ -129,6 +129,7 @@ class MotionLibSMPL(MotionLibBase):
                 end = start + max_len
 
             trans = curr_file['root_trans_offset'].clone()[start:end]
+            # trans = curr_file['root_trans_offset'][start:end].copy()
             pose_aa = to_torch(curr_file['pose_aa'][start:end])
             pose_quat_global = curr_file['pose_quat_global'][start:end]
             

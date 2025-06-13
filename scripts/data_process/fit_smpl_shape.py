@@ -56,7 +56,7 @@ def main(cfg : DictConfig) -> None:
         pose_aa_stand[:, SMPL_BONE_ORDER_NAMES.index(modifier_key)] = sRot.from_euler("xyz", eval(modifier_value),  degrees = False).as_rotvec()
 
     pose_aa_stand = torch.from_numpy(pose_aa_stand.reshape(-1, 72))
-    smpl_parser_n = SMPL_Parser(model_path="data/smpl", gender="neutral")
+    smpl_parser_n = SMPL_Parser(model_path="/data/smpl", gender="neutral")
 
     ###### Shape fitting
     trans = torch.zeros([1, 3])

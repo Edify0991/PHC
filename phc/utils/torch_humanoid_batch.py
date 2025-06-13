@@ -42,6 +42,7 @@ class Humanoid_Batch:
         self.dof_axis = []
         joints = sorted([j.attrib['name'] for j in tree.getroot().find("worldbody").findall('.//joint')])
         motors = sorted([m.attrib['name'] for m in tree.getroot().find("actuator").getchildren()])
+        print('heihei:', len(motors), len(joints))
         assert(len(motors) > 0, "No motors found in the mjcf file")
         
         self.num_dof = len(motors) 
@@ -59,7 +60,12 @@ class Humanoid_Batch:
             if not m in joints:
                 print(m)
         
-        if "type" in tree.getroot().find("worldbody").findall('.//joint')[0].attrib and tree.getroot().find("worldbody").findall('.//joint')[0].attrib['type'] == "free":
+        # 新版本mujoco不再用type="free"，而是使用freejoint，故不能从joint标签类型判断，而须单独判断
+        if tree.getroot().find("worldbody").find("freejoint") is not None:
+            for j in tree.getroot().find("worldbody").findall('.//joint')[0:]:
+                self.dof_axis.append([int(i) for i in j.attrib['axis'].split(" ")])
+            self.has_freejoint = True
+        elif "type" in tree.getroot().find("worldbody").findall('.//joint')[0].attrib and tree.getroot().find("worldbody").findall('.//joint')[0].attrib['type'] == "free":
             for j in tree.getroot().find("worldbody").findall('.//joint')[1:]:
                 self.dof_axis.append([int(i) for i in j.attrib['axis'].split(" ")])
             self.has_freejoint = True
@@ -71,7 +77,7 @@ class Humanoid_Batch:
             for j in tree.getroot().find("worldbody").findall('.//joint')[6:]:
                 self.dof_axis.append([int(i) for i in j.attrib['axis'].split(" ")])
             self.has_freejoint = False
-        
+
         self.dof_axis = torch.tensor(self.dof_axis)
 
         for extend_config in cfg.extend_config:
@@ -231,12 +237,21 @@ class Humanoid_Batch:
 
         expanded_offsets = (self._offsets[:, None].expand(B, seq_len, J, 3).to(device).type(dtype))
         # print(expanded_offsets.shape, J)
+        # print("********************************************")
+
+        # print("self._parents:", self._parents)
+        # print("root_rotations.shape:", root_rotations.shape)
+
+        for idx, (name, parent_idx) in enumerate(zip(self.body_names_augment, self._parents)):
+            print(f"{idx}: {name}, parent_idx: {parent_idx}, parent_name: {self.body_names_augment[parent_idx] if parent_idx >= 0 else 'ROOT'}")
 
         for i in range(J):
+            # print(f"i={i}, parent={self._parents[i]}, rotations_world_len={len(rotations_world)}")
             if self._parents[i] == -1:
                 positions_world.append(root_positions)
                 rotations_world.append(root_rotations)
             else:
+                print(f"rotations_world[{i}] shape:", rotations_world[self._parents[i]].shape)
                 jpos = (torch.matmul(rotations_world[self._parents[i]][:, :, 0], expanded_offsets[:, :, i, :, None]).squeeze(-1) + positions_world[self._parents[i]])
                 rot_mat = torch.matmul(rotations_world[self._parents[i]], torch.matmul(self._local_rotation_mat[:,  (i):(i + 1)], rotations[:, :, (i - 1):i, :]))
                 # rot_mat = torch.matmul(rotations_world[self._parents[i]], rotations[:, :, (i - 1):i, :])

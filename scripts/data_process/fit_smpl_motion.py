@@ -65,7 +65,7 @@ def process_motion(key_names, key_name_to_pkls, cfg):
     robot_joint_pick_idx = [robot_joint_names_augment.index(j) for j in robot_joint_pick]
     smpl_joint_pick_idx = [SMPL_BONE_ORDER_NAMES.index(j) for j in smpl_joint_pick]
     
-    smpl_parser_n = SMPL_Parser(model_path="data/smpl", gender="neutral")
+    smpl_parser_n = SMPL_Parser(model_path="/data/smpl", gender="neutral")
     shape_new, scale = joblib.load(f"data/{cfg.robot.humanoid_type}/shape_optimized_v1.pkl") # TODO: run fit_smple_shape to get this
     
     
@@ -201,8 +201,8 @@ def main(cfg : DictConfig) -> None:
     split_len = len(amass_root.split("/"))
     key_name_to_pkls = {"0-" + "_".join(data_path.split("/")[split_len:]).replace(".npz", ""): data_path for data_path in all_pkls}
     key_names = ["0-" + "_".join(data_path.split("/")[split_len:]).replace(".npz", "") for data_path in all_pkls]
-    if not cfg.get("fit_all", False):
-        key_names = ["0-Transitions_mocap_mazen_c3d_dance_stand_poses"]
+    # if not cfg.get("fit_all", False):
+    #     key_names = ["0-Transitions_mocap_mazen_c3d_dance_stand_poses"]
     
     torch.set_num_threads(1)
     mp.set_sharing_strategy('file_descriptor')

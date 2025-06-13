@@ -48,7 +48,10 @@ def key_call_back( keycode):
     global curr_start, num_motions, motion_id, motion_acc, time_step, dt, paused
     if chr(keycode) == "T":
         print("Next Motion")
-        curr_start += num_motions
+        # curr_start += num_motions
+        curr_start += 1
+        if curr_start >= motion_lib.get_motion_num():
+            curr_start = 0
         motion_lib.load_motions(skeleton_trees=[sk_tree] * num_motions, gender_betas=[torch.zeros(17)] * num_motions, limb_weights=[np.zeros(10)] * num_motions, random_sample=False, start_idx=curr_start)
     elif chr(keycode) == "R":
         print("Reset")

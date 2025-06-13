@@ -21,9 +21,8 @@ import joblib
 import numpy as np
 from isaacgym import gymapi, gymutil, gymtorch
 import torch
-from phc.utils.motion_lib_smpl import MotionLibSMPL as MotionLibSMPL
-from smpl_sim.smpllib.smpl_local_robot import SMPL_Robot
-from poselib.poselib.skeleton.skeleton3d import SkeletonTree
+from phc.utils.motion_lib_real import MotionLibReal as MotionLibReal
+from smpl_sim.poselib.skeleton.skeleton3d import SkeletonTree
 from phc.utils.flags import flags
 
 from easydict import EasyDict
@@ -47,35 +46,19 @@ class AssetDesc:
         self.flip_visual_attachments = flip_visual_attachments
 
 
-masterfoot = False
-# masterfoot = True
-robot_cfg = {
-    "mesh": False,
-    "rel_joint_lm": False,
-    "masterfoot": masterfoot,
-    "upright_start": True,
-    "remove_toe": False,
-    "real_weight_porpotion_capsules": True,
-    "model": "smpl",
-    "body_params": {},
-    "joint_params": {},
-    "geom_params": {},
-    "actuator_params": {},
-}
-smpl_robot = SMPL_Robot(
-    robot_cfg,
-    data_dir="/data/smpl",
-)
-
-gender_beta = np.array([1.0000, -0.2141, -0.1140, 0.3848, 0.9583, 1.7619, 1.5040, 0.5765, 0.9636, 0.2636, -0.4202, 0.5075, -0.7371, -2.6490, 0.0867, 1.4699, -1.1865])
-smpl_robot.load_from_skeleton(betas=torch.from_numpy(gender_beta[None, 1:]), gender=gender_beta[0:1], objs_info=None)
-test_good = f"tmp/smpl/test_good.xml"
-smpl_robot.write_xml(test_good)
-sk_tree = SkeletonTree.from_mjcf(test_good)
-
+g1_xml = "/home/user/wmd/PHC/phc/data/assets/robot/unitree_g1/g1.xml"
+g1_urdf = "/home/user/wmd/PHC/phc/data/assets/robot/unitree_g1/urdf/g1_23dof.urdf"
 asset_descriptors = [
-    AssetDesc(test_good, False),
+    AssetDesc(g1_urdf, False),
+    AssetDesc(g1_xml, False),
 ]
+sk_tree = SkeletonTree.from_mjcf(g1_xml)
+
+motion_file = "/home/user/wmd/PHC/data/g1/v1/amass_all.pkl"
+if os.path.exists(motion_file):
+    print(f"loading {motion_file}")
+else:
+    raise ValueError(f"Motion file {motion_file} does not exist! Please run grad_fit_h1.py first.")
 
 # parse arguments
 args = gymutil.parse_arguments(description="Joint monkey: Animate degree-of-freedom ranges",
@@ -138,15 +121,14 @@ if viewer is None:
 
 # load asset
 # asset_root = "amp/data/assets"
-asset_root = "/home/user/wmd/PHC"
-# asset_root = "/"
+asset_root = "./"
 asset_file = asset_descriptors[args.asset_id].file_name
 
 asset_options = gymapi.AssetOptions()
 # asset_options.fix_base_link = True
 # asset_options.flip_visual_attachments = asset_descriptors[
 #     args.asset_id].flip_visual_attachments
-asset_options.use_mesh_materials = False
+asset_options.use_mesh_materials = True
 
 print("Loading asset '%s' from '%s'" % (asset_file, asset_root))
 asset = gym.load_asset(sim, asset_root, asset_file, asset_options)
@@ -186,55 +168,8 @@ for i in range(num_envs):
     dof_states = np.zeros(num_dofs, dtype=gymapi.DofState.dtype)
     gym.set_actor_dof_states(env, actor_handle, dof_states, gymapi.STATE_ALL)
 
-# Setup Motion
-body_ids = []
-key_body_names = ["R_Ankle", "L_Ankle", "R_Wrist", "L_Wrist"]
-for body_name in key_body_names:
-    body_id = gym.find_actor_rigid_body_handle(envs[0], actor_handles[0], body_name)
-    assert (body_id != -1)
-    body_ids.append(body_id)
+
 gym.prepare_sim(sim)
-body_ids = np.array(body_ids)
-
-# motion_file = "data/amass/pkls/amass_isaac_im_patch_upright_slim.pkl"
-# motion_file = "data/g1/v1/amass_all.pkl"
-motion_file = "sample_data/amass_isaac_standing_upright_slim.pkl"
-# motion_file = "data/amass/pkls/amass_isaac_im_train_upright_slim.pkl"
-# motion_file = "data/amass/pkls/amass_isaac_locomotion_upright.pkl"
-# motion_file = "data/amass/pkls/amass_isaac_slowalk_upright.pkl"
-# motion_file = "data/amass/pkls/amass_isaac_slowalk_upright_slim.pkl"
-# motion_file = "data/amass/pkls/singles/hard1_upright_slim.pkl"
-# motion_file = "data/amass/pkls/amass_isaac_slowalk_upright_slim_double.pkl"
-# motion_file = "data/amass/pkls/amass_isaac_run_upright_slim.pkl"
-# motion_file = "data/amass/pkls/singles/0-BioMotionLab_NTroje_rub077_0027_circle_walk_poses_upright_slim.pkl"
-# motion_file = "data/amass/pkls/amass_isaac_run_upright_slim_double.pkl"
-# motion_file = "data/amass/pkls/amass_isaac_walk_upright_test_slim.pkl"
-# motion_file = "data/amass/pkls/amass_isaac_crawl_upright_slim.pkl"
-# motion_file = "data/amass/pkls/singles/test_test_test.pkl"
-# motion_file = "data/amass/pkls/singles/long_upright_slim.pkl"
-# motion_file = "data/amass/pkls/test_hyberIK.pkl"
-motion_data = joblib.load(motion_file)
-# print(motion_keys)
-
-if masterfoot:
-    _body_names_orig = ['Pelvis', 'L_Hip', 'L_Knee', 'L_Ankle', 'L_Toe', 'R_Hip', 'R_Knee', 'R_Ankle', 'R_Toe', 'Torso', 'Spine', 'Chest', 'Neck', 'Head', 'L_Thorax', 'L_Shoulder', 'L_Elbow', 'L_Wrist', 'L_Hand', 'R_Thorax', 'R_Shoulder', 'R_Elbow', 'R_Wrist', 'R_Hand']
-    _body_names = [
-        'Pelvis', 'L_Hip', 'L_Knee', 'L_Ankle', 'L_Toe', 'L_Toe_1', 'L_Toe_1_1', 'L_Toe_2', 'R_Hip', 'R_Knee', 'R_Ankle', 'R_Toe', 'R_Toe_1', 'R_Toe_1_1', 'R_Toe_2', 'Torso', 'Spine', 'Chest', 'Neck', 'Head', 'L_Thorax', 'L_Shoulder', 'L_Elbow', 'L_Wrist', 'L_Hand', 'R_Thorax', 'R_Shoulder',
-        'R_Elbow', 'R_Wrist', 'R_Hand'
-    ]
-    _body_to_orig = [_body_names.index(name) for name in _body_names_orig]
-    _body_to_orig_without_toe = [_body_names.index(name) for name in _body_names_orig if name not in ['L_Toe', 'R_Toe']]
-    orig_to_orig_without_toe = [_body_names_orig.index(name) for name in _body_names_orig if name not in ['L_Toe', 'R_Toe']]
-
-    _masterfoot_config = {
-        "body_names_orig": _body_names_orig,
-        "body_names": _body_names,
-        "body_to_orig": _body_to_orig,
-        "body_to_orig_without_toe": _body_to_orig_without_toe,
-        "orig_to_orig_without_toe": orig_to_orig_without_toe,
-    }
-else:
-    _masterfoot_config = None
 
 device = (torch.device("cuda", index=0) if torch.cuda.is_available() else torch.device("cpu"))
 
@@ -248,13 +183,11 @@ motion_lib_cfg = EasyDict({
                     "smpl_type": 'smpl',
                     "randomrize_heading": True,
                     "device": device,
-                    "key_body_ids": body_ids,
-                    "masterfoot_config": _masterfoot_config,
+                    "masterfoot_config": None,
                 })
 
-# motion_lib = MotionLibSMPL(motion_file=motion_file, key_body_ids=body_ids, device=device, masterfoot_conifg=_masterfoot_config, fix_height=False, multi_thread=False)
-motion_lib = MotionLibSMPL(motion_lib_cfg)
-num_motions = 30
+motion_lib = MotionLibH1(motion_file=motion_file, device=device, masterfoot_conifg=None, fix_height=False, multi_thread=False, mjcf_file=h1_xml)
+num_motions = 1
 curr_start = 0
 motion_lib.load_motions(skeleton_trees=[sk_tree] * num_motions, gender_betas=[torch.zeros(17)] * num_motions, limb_weights=[np.zeros(10)] * num_motions, random_sample=False)
 motion_keys = motion_lib.curr_motion_keys
@@ -266,8 +199,6 @@ time_step = 0
 rigidbody_state = gym.acquire_rigid_body_state_tensor(sim)
 rigidbody_state = gymtorch.wrap_tensor(rigidbody_state)
 rigidbody_state = rigidbody_state.reshape(num_envs, -1, 13)
-# rigidbody_state = rigidbody_state.cpu().reshape(num_envs, -1, 13)
-# rigidbody_state = gymtorch.wrap_tensor(gymtorch.unwrap_tensor(rigidbody_state).reshape(num_envs, -1, 13))
 
 actor_root_state = gym.acquire_actor_root_state_tensor(sim)
 actor_root_state = gymtorch.wrap_tensor(actor_root_state)
@@ -279,27 +210,56 @@ gym.subscribe_viewer_keyboard_event(viewer, gymapi.KEY_P, "print")
 gym.subscribe_viewer_keyboard_event(viewer, gymapi.KEY_T, "next_batch")
 motion_id = 0
 motion_acc = set()
-if masterfoot:
-    left_to_right_index = [7, 8, 9, 10, 11, 12, 13, 0, 1, 2, 3, 4, 5, 6, 14, 15, 16, 17, 18, 24, 25, 26, 27, 28, 19, 20, 21, 22, 23]
-else:
-    left_to_right_index = [4, 5, 6, 7, 0, 1, 2, 3, 8, 9, 10, 11, 12, 18, 19, 20, 21, 22, 13, 14, 15, 16, 17]
+
+
+
+
 env_ids = torch.arange(num_envs).int().to(args.sim_device)
+
+
+## Create sphere actors
+radius = 0.1
+color = gymapi.Vec3(1.0, 0.0, 0.0)
+sphere_params = gymapi.AssetOptions()
+
+sphere_asset = gym.create_sphere(sim, radius, sphere_params)
+
+num_spheres = 19
+init_positions = gymapi.Vec3(0.0, 0.0, 0.0)
+spacing = 0.
+
+
+
+
+
 while not gym.query_viewer_has_closed(viewer):
     # step the physics
 
     motion_len = motion_lib.get_motion_length(motion_id).item()
     motion_time = time_step % motion_len
     # motion_time = 0
-
+    # import pdb; pdb.set_trace()
+    # print(motion_id, motion_time)
     motion_res = motion_lib.get_motion_state(torch.tensor([motion_id]).to(args.compute_device_id), torch.tensor([motion_time]).to(args.compute_device_id))
 
     root_pos, root_rot, dof_pos, root_vel, root_ang_vel, dof_vel, smpl_params, limb_weights, pose_aa, rb_pos, rb_rot, body_vel, body_ang_vel = \
                 motion_res["root_pos"], motion_res["root_rot"], motion_res["dof_pos"], motion_res["root_vel"], motion_res["root_ang_vel"], motion_res["dof_vel"], \
                 motion_res["motion_bodies"], motion_res["motion_limb_weights"], motion_res["motion_aa"], motion_res["rg_pos"], motion_res["rb_rot"], motion_res["body_vel"], motion_res["body_ang_vel"]
-
     if args.show_axis:
         gym.clear_lines(viewer)
-
+        
+    gym.clear_lines(viewer)
+    gym.refresh_rigid_body_state_tensor(sim)
+    # import pdb; pdb.set_trace()
+    idx = 0
+    for pos_joint in rb_pos[0, 1:]: # idx 0 torso (duplicate with 11)
+        sphere_geom2 = gymutil.WireframeSphereGeometry(0.1, 4, 4, None, color=(1, 0.0, 0.0))
+        sphere_pose = gymapi.Transform(gymapi.Vec3(pos_joint[0], pos_joint[1], pos_joint[2]), r=None)
+        gymutil.draw_lines(sphere_geom2, gym, viewer, envs[0], sphere_pose) 
+    # import pdb; pdb.set_trace()
+        
+    # out = motion_lib.mesh_parsers.forward_kinematics_batch(pose_aa, root_rot, root_pos)
+    # import pdb; pdb.set_trace()
     #################### Heading invarance check: ####################
     # from phc.env.tasks.humanoid_im import compute_imitation_observations
     # from phc.env.tasks.humanoid import compute_humanoid_observations_smpl_max
@@ -355,13 +315,13 @@ while not gym.query_viewer_has_closed(viewer):
     # dof_pos = dof_pos.cpu().numpy()
     # dof_states['pos'] = dof_pos
     # speed = speeds[current_dof]
-
     dof_state = torch.stack([dof_pos, torch.zeros_like(dof_pos)], dim=-1).squeeze().repeat(num_envs, 1)
     gym.set_dof_state_tensor_indexed(sim, gymtorch.unwrap_tensor(dof_state), gymtorch.unwrap_tensor(env_ids), len(env_ids))
 
     gym.simulate(sim)
     gym.refresh_rigid_body_state_tensor(sim)
     gym.fetch_results(sim, True)
+    
 
     # print((rigidbody_state[None, ] - rigidbody_state[:, None]).sum().abs())
     # print((actor_root_state[None, ] - actor_root_state[:, None]).sum().abs())

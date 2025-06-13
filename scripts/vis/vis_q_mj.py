@@ -47,6 +47,8 @@ def key_call_back( keycode):
     elif chr(keycode) == "T":
         print("next")
         motion_id += 1
+        if motion_id >= len(motion_data_keys):
+            motion_id = 0
         curr_motion_key = motion_data_keys[motion_id]
         print(curr_motion_key)
     else:

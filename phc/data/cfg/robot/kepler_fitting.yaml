@@ -1,0 +1,96 @@
+humanoid_type: kepler
+bias_offset: False
+has_self_collision: False
+has_mesh: False
+has_jt_limit: False
+has_dof_subset: True
+has_upright_start: True
+has_smpl_pd_offset: False
+remove_toe: False # For humanoid's geom toe
+motion_sym_loss: False
+sym_loss_coef: 1
+big_ankle: True
+
+has_shape_obs: false
+has_shape_obs_disc: false
+has_shape_variation: False
+
+masterfoot: False
+freeze_toe: false
+freeze_hand: False
+box_body: True
+real_weight: True
+real_weight_porpotion_capsules: True
+real_weight_porpotion_boxes: True
+
+body_names: ['Body', 
+            'left_hip_roll', 'left_hip_yaw', 'left_hip_pitch', 'left_knee_pitch', 'left_ankle_pitch', 'left_ankle_roll', 
+            'right_hip_roll', 'right_hip_yaw', 'right_hip_pitch', 'right_knee_pitch', 'right_ankle_pitch', 'right_ankle_roll', 
+            'waist_roll', 'waist_yaw', # 'head_yaw', 'head_pitch', 
+            'left_shoulder_pitch', 'left_shoulder_roll', 'left_shoulder_yaw', 'left_elbow_pitch', 'left_elbow_yaw', 'left_wrist_pitch', 'left_wrist_yaw', 'left_thumb_1_roll', 'left_thumb_2_pitch', 'left_thumb_3_pitch', 'left_index_finger_2_pitch', 'left_index_finger_3_pitch', 'left_middle_finger_2_pitch', 'left_middle_finger_3_pitch', 'left_ring_finger_2_pitch', 'left_ring_finger_3_pitch', 'left_little_finger_2_pitch', 'left_little_finger_3_pitch', 
+            'right_shoulder_pitch', 'right_shoulder_roll', 'right_shoulder_yaw', 'right_elbow_pitch', 'right_elbow_yaw', 'right_wrist_pitch', 'right_wrist_yaw', 'right_thumb_1_roll', 'right_thumb_2_pitch', 'right_thumb_3_pitch', 'right_index_finger_2_pitch', 'right_index_finger_3_pitch', 'right_middle_finger_2_pitch', 'right_middle_finger_3_pitch', 'right_ring_finger_2_pitch', 'right_ring_finger_3_pitch', 'right_little_finger_2_pitch', 'right_little_finger_3_pitch']
+       
+limb_weight_group: 
+  - ['left_hip_roll', 'left_hip_yaw', 'left_hip_pitch', 'left_knee_pitch', 'left_ankle_pitch', 'left_ankle_roll']
+  - ['right_hip_roll', 'right_hip_yaw', 'right_hip_pitch', 'right_knee_pitch', 'right_ankle_pitch', 'right_ankle_roll']
+  - ['Body', 'waist_roll', 'waist_yaw']
+  - ['left_shoulder_pitch', 'left_shoulder_roll', 'left_shoulder_yaw', 'left_elbow_pitch', 'left_elbow_yaw', 'left_wrist_pitch', 'left_wrist_yaw', 'left_thumb_1_roll', 'left_thumb_2_pitch', 'left_thumb_3_pitch', 'left_index_finger_2_pitch', 'left_index_finger_3_pitch', 'left_middle_finger_2_pitch', 'left_middle_finger_3_pitch', 'left_ring_finger_2_pitch', 'left_ring_finger_3_pitch', 'left_little_finger_2_pitch', 'left_little_finger_3_pitch']
+  - ['right_shoulder_pitch', 'right_shoulder_roll', 'right_shoulder_yaw', 'right_elbow_pitch', 'right_elbow_yaw', 'right_wrist_pitch', 'right_wrist_yaw', 'right_thumb_1_roll', 'right_thumb_2_pitch', 'right_thumb_3_pitch', 'right_index_finger_2_pitch', 'right_index_finger_3_pitch', 'right_middle_finger_2_pitch', 'right_middle_finger_3_pitch', 'right_ring_finger_2_pitch', 'right_ring_finger_3_pitch', 'right_little_finger_2_pitch', 'right_little_finger_3_pitch']
+
+dof_names: ['left_hip_roll', 'left_hip_yaw', 'left_hip_pitch', 'left_knee_pitch', 'left_ankle_pitch', 'left_ankle_roll', 
+            'right_hip_roll', 'right_hip_yaw', 'right_hip_pitch', 'right_knee_pitch', 'right_ankle_pitch', 'right_ankle_roll', 
+            'waist_roll', 'waist_yaw',
+            'left_shoulder_pitch', 'left_shoulder_roll', 'left_shoulder_yaw', 'left_elbow_pitch', 'left_elbow_yaw', 'left_wrist_pitch', 'left_wrist_yaw', 
+            'right_shoulder_pitch', 'right_shoulder_roll', 'right_shoulder_yaw', 'right_elbow_pitch', 'right_elbow_yaw', 'right_wrist_pitch', 'c']
+
+right_foot_name: 'right_ankle_roll'
+left_foot_name: 'left_ankle_roll'
+
+asset:
+  assetRoot: "./"
+  assetFileName: "phc/data/assets/robot/kepler/1230URDF.xml"
+  urdfFileName: "phc/data/assets/robot/kepler/urdf/1230URDF.urdf"
+
+
+extend_config:
+  - joint_name: "head_yaw"
+    parent_name: "waist_yaw"
+    pos: [0.0, 0.0, 0.0]
+    rot: [1.0, 0.0, 0.0, 0.0]
+
+  # - joint_name: "left_toe_link"
+  #   parent_name: "left_ankle_roll_link"
+  #   pos: [0.08, 0.0, 0.0]
+  #   rot: [1.0, 0.0, 0.0, 0.0]
+
+  # - joint_name: "right_toe_link"
+  #   parent_name: "right_ankle_roll_link"
+  #   pos: [0.08, 0.0, 0.0]
+  #   rot: [1.0, 0.0, 0.0, 0.0]
+
+base_link: "Body"
+joint_matches:
+  - ["Body", "Pelvis"]
+  - ["left_hip_pitch", "L_Hip"]
+  - ["left_knee_pitch", "L_Knee"]
+  - ["left_ankle_roll", "L_Ankle"]
+  - ["right_hip_pitch", "R_Hip"]
+  - ["right_knee_pitch", "R_Knee"]
+  - ["right_ankle_roll", "R_Ankle"]
+  - ["left_shoulder_roll", "L_Shoulder"]
+  - ["left_elbow_pitch", "L_Elbow"]
+  - ["left_wrist_pitch", "L_Hand"]
+  - ["right_shoulder_roll", "R_Shoulder"]
+  - ["right_elbow_pitch", "R_Elbow"]
+  - ["right_wrist_pitch", "R_Hand"]
+  # - ["head_link", "Head"]
+  # - ["left_toe_link", "L_Toe"]
+  # - ["right_toe_link", "R_Toe"]
+
+
+smpl_pose_modifier:
+  - Pelvis: "[np.pi/2, 0, np.pi/2]"
+  - L_Shoulder: "[0, 0, -np.pi/2]"
+  - R_Shoulder: "[0, 0, np.pi/2]"
+  # - L_Elbow: "[0, -np.pi/2, 0]"
+  # - R_Elbow: "[0, np.pi/2, 0]"
