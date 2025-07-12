@@ -38,7 +38,7 @@ def run(in_file: str, out_file: str):
 
     smpl_local_robot = LocalRobot(
         robot_cfg,
-        data_dir="data/smpl",
+        data_dir="/data/smpl",
     )
 
     amass_data = joblib.load(in_file)

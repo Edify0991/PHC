@@ -74,7 +74,7 @@ def zoom_func(action):
 Name = "getting_started"
 Title = "Getting Started"
 
-data_dir = "data/smpl"
+data_dir = "/data/smpl"
 smpl_parser_n = SMPL_Parser(model_path=data_dir, gender="neutral")
 smpl_parser_m = SMPL_Parser(model_path=data_dir, gender="male")
 smpl_parser_f = SMPL_Parser(model_path=data_dir, gender="female")

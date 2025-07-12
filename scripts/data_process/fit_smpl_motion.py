@@ -207,7 +207,7 @@ def main(cfg : DictConfig) -> None:
     key_names = ["0-" + "_".join(data_path.split("/")[split_len:]).replace(".npz", "") for data_path in all_pkls]
     # if not cfg.get("fit_all", False):
     #     key_names = ["0-Transitions_mocap_mazen_c3d_dance_stand_poses"]
-    
+    print("key_names:", key_names)
     torch.set_num_threads(1)
     mp.set_sharing_strategy('file_descriptor')
     jobs = key_names
@@ -228,6 +228,7 @@ def main(cfg : DictConfig) -> None:
         for data_dict in all_data_list:
             all_data.update(data_dict)
     # import ipdb; ipdb.set_trace()
+    fit_all = getattr(cfg, "fit_all", False)
     if len(all_data) == 1:
         data_key = list(all_data.keys())[0]
         os.makedirs(f"data/{cfg.robot.humanoid_type}/v1/singles", exist_ok=True)
@@ -235,9 +236,15 @@ def main(cfg : DictConfig) -> None:
         print(dumped_file)
         joblib.dump(all_data, dumped_file)
     else:
-        os.makedirs(f"data/{cfg.robot.humanoid_type}/v1/", exist_ok=True)
-        joblib.dump(all_data, f"data/{cfg.robot.humanoid_type}/v1/amass_all.pkl")
-    
+        if fit_all:
+            os.makedirs(f"data/{cfg.robot.humanoid_type}/v1/", exist_ok=True)
+            joblib.dump(all_data, f"data/{cfg.robot.humanoid_type}/v1/amass_all.pkl")
+        else:
+            os.makedirs(f"data/{cfg.robot.humanoid_type}/v1/singles", exist_ok=True)
+            for data_key, data_val in all_data.items():
+                dumped_file = f"data/{cfg.robot.humanoid_type}/v1/singles/{data_key}.pkl"
+                print(dumped_file)
+                joblib.dump({data_key: data_val}, dumped_file)
 
 
 if __name__ == "__main__":

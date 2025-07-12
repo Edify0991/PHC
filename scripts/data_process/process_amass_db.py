@@ -258,9 +258,9 @@ if __name__ == "__main__":
     qpos_list = list(amass_db.items())
     np.random.seed(0)
     np.random.shuffle(qpos_list)
-    smpl_parser_n = SMPL_Parser(model_path="data/smpl", gender="neutral", use_pca=False, create_transl=False)
-    smpl_parser_m = SMPL_Parser(model_path="data/smpl", gender="male", use_pca=False, create_transl=False)
-    smpl_parser_f = SMPL_Parser(model_path="data/smpl", gender="female", use_pca=False, create_transl=False)
+    smpl_parser_n = SMPL_Parser(model_path="/data/smpl", gender="neutral", use_pca=False, create_transl=False)
+    smpl_parser_m = SMPL_Parser(model_path="/data/smpl", gender="male", use_pca=False, create_transl=False)
+    smpl_parser_f = SMPL_Parser(model_path="/data/smpl", gender="female", use_pca=False, create_transl=False)
 
     amass_seq_data = process_qpos_list(qpos_list)
      

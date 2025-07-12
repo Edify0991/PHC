@@ -36,7 +36,7 @@ print(robot_cfg)
 
 smpl_local_robot = LocalRobot(
     robot_cfg,
-    data_dir="data/smpl",
+    data_dir="/data/smpl",
 )
 # res_data = joblib.load("data/mdm/res.pk")
 # res_data = joblib.load("data/mdm/res_wave.pk")

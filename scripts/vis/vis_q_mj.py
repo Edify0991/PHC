@@ -87,7 +87,9 @@ def main(cfg : DictConfig) -> None:
         while viewer.is_running():
             step_start = time.time()
             curr_motion_key = motion_data_keys[motion_id]
+            print(f"Current motion: {curr_motion_key}")
             curr_motion = motion_data[curr_motion_key]
+            print("the type of curr_motion is ", type(curr_motion))
             curr_time = int(time_step/dt) % curr_motion['dof'].shape[0]
             
             mj_data.qpos[:3] = curr_motion['root_trans_offset'][curr_time]

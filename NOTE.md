@@ -51,3 +51,196 @@ mjcf_data['body_to_joint'] 是一个字典，key 是 body 名字，value 是对�
                 rotations_world.append(rot_mat)这个循环中进行修改，当遍历到actuated_joints_idx中所指向的body时，说明该body含有joint，此时就可以在求jpos和rot_mat时，当遇到含有joint的body，就使用rotations中的对应元素，否则遇到不含有joint的body，就使用单位旋转矩阵，而在执行到wbody_pos, wbody_mat = self.forward_kinematics_batch(pose_mat[:, :, 1:], pose_mat[:, :, 0:1], trans)这一步以后，再利用actuated_joints_idx将其中索引对应的位置向量和旋转矩阵赋值给wbody_pos和wbody_mat，我该如何写代码？
 
 由于kepler模型中存在body与joint数目不等的情况，不像宇树模型中没有joint的连杆只是用geom标签不使用body标签，这样在解析xml模型时就不会出错，为此修改了运动重定向时关于机器人正运动学的代码，重定向流程基本走通，不过效果感觉不是太好，下一步继续修正改善重定向结果，搞明白vis_j_mj.py代码中红色小球对应什么，该如何调整才能使其与机器人本体对应的更好，此外还要尝试解决机器人悬空的问题，还有就是参考human2humanoid中重定向相关代码，将重定向效果在isaacgym或isaaclab中可视化，在这个过程中要基本搞清对smpl模型的操作。还要同步进行训练部分的代码学习，尤其是PHC中PNN的用法与作用，目前还没搞懂PHC论文的主要工作是什么，是否可以一个策略学习绝大部分动作。
+
+### run_hydra.py
+
+#### RLGPUAlgoObserver
+* 继承于AlgoObserver类，用于监控和记录训练过程中的统计信息，特别是成功率相关的指标
+* after_init：初始化统计工具和 TensorBoard writer，创建了一个滑动平均计算器
+* process_infos：处理环境返回的信息，更新成功率统计
+* after_clear_stats：清除统计数据
+* after_print_stats: 将统计结果写入 TensorBoard，记录训练进度
+
+
+### humanoid_amp.py
+* fetch_amp_obs_demo：为判别器(discriminator)创建参考动作的AMP观测数据，从动作库中采样参考动作，并生成对应的AMP观测数据，供判别器训练使用
+
+### motion_lib_base.py
+* sample_motions：从动作库中随机采样 n 个动作序列的索引
+* load_motions:
+  * 记录单个骨架的关节数和环境数量（骨架数量）
+  * 通过随机采样或顺序采样选择动作序列，随机采样的采样概率可自适应修改，顺序采样会设置起始动作索引与取模运算（环境数量与动作数量不匹配）。随机采样适用于训练模式，可增加数据多样性，修改采样概率后可重点训练困难的动作；顺序采样用于评估/测试模式，可确保所有动作都被覆盖，便于调试和结果复现。
+  * 设置当前批次的动作相关信息和批次内采样概率。将动作ID转换为one-hot编码，获取当前批次动作序列的字符串标识符，计算批次内采样概率；  
+    实现了两级采样机制：第一级: 从所有动作中采样一批动作给各个环境；第二级: 从当前批次的动作中采样参考数据给判别器
+  * 根据采样的索引获取对应的动作数据，设置每个进程只是用一个线程，准备多进程加载和处理动作数据
+  * 建一个空字典用于累积多进程的处理结果，字典能确保结果的顺序性，计算每个进程应该处理的任务数量
+  * 实现主-从并行处理模式加载动作数据，主进程处理第一批任务 + 协调整体流程，子进程并行处理其余任务批次，通过队列传递结果，字典累积最终数据
+  * 处理多进程加载的动作数据结果的核心部分，提取动作基本信息（动作序列的帧率、每帧时间间隔、动作序列总帧数、动作序列总时长），处理SMPL相关数据（轴角表示的姿态数据与性别和身体形态参数），如果启用真实轨迹模式，存储Quest VR头显的运动数据（位置、旋转、角速度、线速度）
+  * 将所有处理好的动作数据整合成统一的张量格式，方便后续的快速访问和采样，计算每个动作序列在大张量中的起始索引
+* load_motion_with_skeleton：需要在不同子类中实现，使用不同的机器人需要不同的实现，将原始动作数据（AMASS或其他格式的动作数据）转换为可用于训练的骨架运动SkeletonMotion数据
+  * 给每个进程设置独一无二的随机种子，保证多进程数据处理的随机性，不同进程处理相同数据时会产生不同的增强效果从而增加数据多样性，避免所有进程产生相同的训练样本可以提高训练质量
+  * 进行数据加载和预处理，这时可能会碰到 之前预处理时处理文件夹情况时存储的内容为文件名而不是具体动作数据的情况，这里进行动作数据读取
+  * 如果动作序列太长，会随机选择一个子序列
+  * 若在训练模式下（不能在test/eval模式下），进行数据增强，随即旋转整个动作序列的朝向（测试时保持原始朝向）
+  * 使用SMPL网格计算准确的地面接触点，调整根部位置，确保角色脚部接触地面，避免角色悬浮或陷入地面
+  * 进行骨架状态构建，将姿态和位置数据转换为骨架状态对象，创建SkeletonMotion对象，包含完整的运动学信息
+  * Quest VR数据处理
+
+* load_data：从文件或文件夹中加载动作数据，并根据不同的筛选条件进行处理，为后续的动作库初始化做准备
+  * 文件模式：_motion_data_list 内容是实际的动作数据对象数组，_motion_data_keys 内容是动作序列的名称数组
+  * 目录模式：_motion_data_list 和_motion_data_keys 内容都是文件路径字符串数组
+
+### base_task.py
+* 是强化学习环境的核心组件，它封装了与 Isaac Gym 物理仿真器的交互，为强化学习训练提供标准化的环境接口
+* init：环境初始化，初始化强化学习环境的所有核心组件，包括显示管理（设置虚拟显示器（用于无头模式下的渲染））、设备配置、缓冲区分配（为 RL 训练分配关键的张量缓冲区——观测、状态、奖励、重置标志、progress）
+* create_viewer：创建可视化界面，可实时观察智能体的学习进度、通过键盘快捷键控制训练过程、录制训练视频和状态数据
+* step：RL环境的主要步进函数，先进行动作预处理，应用域随机化噪声（提高泛化能力），然后物理步进，执行动作并推进物理仿真，最后状态计算，计算新的观测、奖励、重置标志
+* pre_physics_step：动作应用，将智能体的动作应用到仿真环境中，在子类中实现具体的动作到仿真控制的映射
+* post_physics_step：状态更新，物理仿真步进后计算 RL 所需的信息（计算观测、奖励，判断终止条件，更新进度计数）
+* _physics_step：物理仿真循环，控制**策略更新**频率与**物理仿真**频率的比例，在物理步进中集成可视化渲染
+* apply_randomizations：域随机化
+* _record_states：记录训练状态
+* _clear_recorded_states: 清除记录
+* _write_states_to_file: 保存状态到文件
+* setup_talk_client与talk：用于WebSocket通信，分布式训练支持 远程监控（通过网络监控训练进度）、远程控制（远程重置环境、开始/停止录制）、多用户协作（支持多人同时观察训练过程）
+  * 在线程内创建新的独立异步事件循环
+
+### humanoid.py
+* 是专门针对人形机器人强化学习任务的核心基类，为AMP、PHC等算法提供了人形机器人特有的功能，相较于BaseTask，专门针对人形机器人的物理仿真和观测计算，其子类(如HumanoidAMP)实现具体的学习算法(AMP、PHC等)
+* init：初始化人形机器人强化学习环境的核心组件，加载机器人配置（支持SMPL人体模型和真实机器人(H1、G1)）、设置控制模式（PD控制、力控制等）、配置观测和动作空间（根据机器人类型自动计算维度）、初始化张量缓冲区（为并行训练分配GPU内存）
+* load_humanoid_configs：配置加载分发器，根据机器人类型分发到不同的配置加载函数
+* load_smpl_configs： SMPL人体模型配置，每个关节3自由度(轴角表示)
+* load_robot_configs：真实机器人配置，每个关节1自由度(关节角)
+* create_sim：仿真世界创建，创建Isaac Gym仿真环境，设置坐标系为Z轴向上，创建地面（配置摩擦力、弹性等物理参数），创建环境实例（支持数千个并行环境）
+* _create_envs：批量环境创建
+  * SMPL情况下可多样化资产生成（生成不同的SMPL XML文件），多进程资产创建（利用多核CPU加速XML文件生成）与物理属性设置（质量、惯性、摩擦力等）
+* _build_env：单个环境构建，配置自碰撞过滤以及PD控制参数
+* _compute_humanoid_obs：人形机器人观测计算，这是与BaseTask最大的区别之一，专门计算人形机器人的复杂观测，要将身体状态转换到根坐标系后计算出相对观测
+  * SMPL情况下计算观测维度时，分解为根部高度（1）、身体位置（相对，3）、身体旋转（6D表示，6）、身体速度（3）、身体角速度（3）、去除根部位置（因为已用相对位置，-3）
+  * 维护历史状态缓冲区（观测维度=基础观测x(历史步数+1)）
+* pre_physics_step：动作预处理，与BaseTask的区别是，
+BaseTask面向通用动作处理，Humanoid针对人形机器人的PD控制、力矩控制
+  * SMPL：要将轴角动作转PD目标
+  * 真实机器人：直接关节角目标
+* _action_to_pd_targets：将归一化的网络输出转换为关节目标位置
+  * SMPL特殊处理：加强膝关节控制
+* _physics_step：物理步进,控制频率管理
+* _compute_torques：力矩计算 (H1/G1机器人)
+* reset：环境重置，若开启“安全重置”机制，会再执行一步仿真然后再次重置，为了消除任何残留的物理状态异常
+* _reset_actors：角色状态重置
+* _create_smpl_humanoid_xml：SMPL XML生成，支持多进程XML生成
+* sample_char_color：用于角色着色，不同环境使用不同颜色，便于观察训练过程
+* _build_key_body_ids_tensor：关键身体部位索引，用来快速访问重要身体部位（如脚、手）的物理状态
+
+### humanoid_amp.py
+* 是实现AMP（Adversarial Motion Prior）算法的核心组件，它继承自 Humanoid 类，为动作模仿学习提供了完整的基础设施
+* 实现了：
+  * 数据管理: 加载和管理大量人类动作数据
+  * 观测计算: 构建适合判别器训练的观测表示
+  * 状态初始化: 从参考动作中初始化环境状态
+  * 性能优化: 缓存机制和JIT编译提高效率
+  * 调试支持: 丰富的调试和测试工具
+* init：AMP环境初始化，涉及到关键AMP配置（状态初始化策略、AMP观测历史步数、是否包含根部高度观测）  
+  与Humanoid类相比，主要区别在于：增加了AMP特有的观测缓冲区、配置了动作参考数据的初始化策略、设置了判别器需要的历史观测
+  * StateInit 枚举类 - 初始化策略（默认初始姿态、从动作序列开始、随机时间点初始化、混合策略）
+* _load_motion：动作数据加载，加载人类动作捕捉数据作为AMP的参考，数据来源于AMASS数据集中的人类动作，并经过fit_smpl_motion.py 处理转换为机器人格式
+* resample_motions：重新采样动作，在训练过程中重新加载动作数据，增加训练多样性
+* _setup_character_props：设置AMP观测维度
+* _compute_amp_observations：计算AMP观测，计算用于判别器训练的观测数据
+* _update_hist_amp_obs：更新历史观测，维护多步历史观测，为判别器提供时序信息
+* fetch_amp_obs_demo：获取参考观测数据，也是AMP训练核心函数，首先随机采样动作ID和时间，然后构建参考观测，最后返回给判别器训练使用
+* build_amp_obs_demo：构建参考观测，从动作库中构建多步历史观测
+* _reset_actors：智能体重置策略，根据配置选择重置策略
+* _reset_ref_state_init：参考动作初始化，AMP的核心重置策略——先采样参考状态，设置环境状态为参考动作的状态，还要记录初始化信息
+* _sample_ref_state：采样参考状态，从动作库中随机采样参考状态用于环境初始化
+* _get_fixed_smpl_state_from_motionlib：SMPL高度修正，解决SMPL模型的地面接触问题
+* _get_state_from_motionlib_cache：动作状态缓存，缓存相同查询的结果，避免重复计算
+* build_amp_observations_smpl：是AMP观测构建函数（JIT编译）
+* _hack_motion_sync：动作同步测试，强制环境跟随参考动作，用于验证动作数据的正确性
+* _hack_output_motion：动作输出，记录和输出训练过程中的动作序列
+
+
+### humanoid_amp_task.py
+* 数据流：AMASS数据 → fit_smpl_motion.py → 机器人动作数据 → MotionLib → HumanoidAMP → HumanoidAMPTask → HumanoidIm
+* init：任务导向AMP环境初始化
+  * AMP算法层面：
+    * 继承动作库: 从 fit_smpl_motion.py 处理的数据中加载人类动作参考
+    * 保持判别器功能: 维护AMP的对抗性训练能力
+    * 动作先验: 利用大量AMASS数据学习自然动作模式
+  * PHC算法扩展:
+    * 任务观测开关: _enable_task_obs 控制是否添加任务特定观测
+    * 任务标识: self.has_task = True 标记此环境包含具体任务目标
+* get_obs_size：动态观测维度计算，所继承父类方法计算的是AMP基础观测维度，其子类（HumanoidIm计算任务观测）
+* pre_physics_step：物理步进前的统一处理，从父类方法执行AMP动作处理，然后进行任务状态更新。
+  * 任务更新具体内容：
+    * 目标跟踪: 更新目标位置和朝向
+    * 进度计算: 计算任务完成度
+    * 动态目标: 处理移动目标或动态任务
+    * 约束检查: 验证任务约束条件
+* render： 分层渲染系统，并可进行任务可视化（子类中实现）
+  * 可视化层次结构：
+    * AMP层可视化：
+      - 人形机器人模型 (基于kepler.xml/g1.xml)
+      - 参考动作轨迹 (来自fit_smpl_motion.py处理的数据)
+      - 判别器状态指示
+      - AMP观测信息
+    * 任务层可视化：
+      - 目标点标记
+      - 路径规划线
+      - 任务进度条
+      - 完成状态指示器
+* _update_task：任务状态更新接口
+* _reset_envs：分层环境重置（AMP重置和任务重置）
+* _compute_observations：组合观测计算核心
+* _compute_task_obs：任务观测计算接口
+* _compute_reward：奖励计算接口
+* _draw_task：任务可视化接口
+
+### humanoid_im.py
+* 继承自 HumanoidAMPTask，实现了完整的动作模仿（Imitation）功能
+* init：关于PHC算法的关键配置，是否使用全身体奖励计算、是否启用未来轨迹跟踪（PHC的和新特性）、未来轨迹采样数量（用于Progressive Control）
+  * 跟踪身体部位，若是VR，则只有跟踪的三个关键点（头+双手），否则为motion tracking所需的所有关节
+* _load_motion：动作数据加载
+  * 加载由 fit_smpl_motion.py 处理后的PKL文件
+  * 支持SMPL和真实机器人(H1/G1)两种数据格式
+  * 使用 torch_humanoid_batch.py 进行前向运动学计算
+  * 若新添加机器人，需要编写motionlib
+* resample_motions：动作重采样
+* get_task_obs_size：任务观测维度计算
+  * 位置差异: 3维 (x, y, z)
+  * 旋转差异: 6维 (6D旋转表示)
+  * 速度差异: 3维
+  * 角速度差异: 3维
+  * 总计: 15维/身体部位
+* _compute_task_obs：PHC核心观测计算
+  * Multiplicative Progressive Control准备:
+  * 时间步采样: 为每个环境采样多个未来时间点
+  * 状态预测: 从动作库中获取未来状态作为控制目标
+  * 观测构建: 将当前状态与未来目标状态的差异作为观测
+* _compute_reward：分层奖励计算
+  * 距离敏感的奖励策略，远距离采用位置奖励，近距离采用模仿奖励，此外还有标准全身模仿奖励
+    * 位置奖励: 引导智能体到达目标区域  
+    * 模仿奖励: 确保动作自然性
+  * 功率奖励: 能效优化
+* _get_state_from_motionlib_cache：状态缓存和预测，是Progressive Control核心实现
+  * 缓存机制避免重复计算
+  * 为Progressive Control服务:
+    * 状态预测: 获取未来时间点的参考状态
+    * 性能优化: 缓存避免重复的前向运动学计算
+    * 偏移处理: 支持全局位置偏移，实现灵活的任务目标
+* _reset_ref_state_init：智能重置策略
+  * 随机距离初始化，支持Progressive Control
+* compute_imitation_observations_v6：JIT编译的观测计算函数，高效观测计算
+  * JIT编译: 提高计算效率，支持大规模并行训练
+  * 局部坐标系: 确保观测的旋转不变性
+  * 批量处理: 同时处理多个时间步和环境
+* create_o3d_viewer：3D可视化
+* render：实时渲染，渲染当前状态和参考状态，同时显示当前和参考动作
+* _compute_reset：智能重置逻辑，支持动作循环，用于长期训练，会更新全局偏移以保持连续性
+* Multiplicative Progressive Control的实现核心思想（如何实现渐进式控制）：
+  * 多时间步预测: _fut_tracks 启用时，计算多个未来时间点的目标状态（未来轨迹采样）
+  * 距离分层控制: zero_out_far 根据距离目标的远近采用不同控制策略
+    * 远距离：方向控制
+    * 中距离：位置控制
+    * 近距离：精确模仿
+  * 动态目标更新: 通过 _global_offset 实现目标位置的动态调整

@@ -39,7 +39,7 @@ def main():
     mujoco_joint_names = ['Pelvis', 'L_Hip', 'L_Knee', 'L_Ankle', 'L_Toe', 'R_Hip', 'R_Knee', 'R_Ankle', 'R_Toe', 'Torso', 'Spine', 'Chest', 'Neck', 'Head', 'L_Thorax', 'L_Shoulder', 'L_Elbow', 'L_Wrist', 'L_Hand', 'R_Thorax', 'R_Shoulder', 'R_Elbow', 'R_Wrist', 'R_Hand']
     Name = pkl_dir.split("/")[-1].split(".")[0]
     pkl_data = joblib.load(pkl_dir)
-    data_dir = "data/smpl"
+    data_dir = "/data/smpl"
     mujoco_2_smpl = [mujoco_joint_names.index(q) for q in joint_names if q in mujoco_joint_names]
     smpl_parser_n = SMPL_Parser(model_path=data_dir, gender="neutral")
     smpl_parser_m = SMPL_Parser(model_path=data_dir, gender="male")

@@ -117,7 +117,7 @@ class HumanoidAMP(Humanoid):
 
         self._amp_obs_demo_buf = None
 
-        data_dir = "data/smpl"
+        data_dir = "/data/smpl"
         
         if self.humanoid_type in ["smpl", ]:
             self.smpl_parser_n = SMPL_Parser(model_path=data_dir, gender="neutral").to(self.device)
@@ -332,7 +332,7 @@ class HumanoidAMP(Humanoid):
         assert (self._dof_offsets[-1] == self.num_dof)
         if self.humanoid_type in ["smpl", "smplh", "smplx"]:
             motion_lib_cfg = EasyDict({
-                "motion_file": motion_file,
+                "motion_file": motion_train_file,
                 "device": torch.device("cpu"),
                 "fix_height": FixHeightMode.full_fix,
                 "min_length": -1,

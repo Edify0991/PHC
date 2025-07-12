@@ -33,7 +33,7 @@ print(robot_cfg)
 
 smpl_local_robot = LocalRobot(
     robot_cfg,
-    data_dir="data/smpl",
+    data_dir="/data/smpl",
 )
 
 amass_data = joblib.load("insert_your_data")
