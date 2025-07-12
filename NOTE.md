@@ -244,3 +244,190 @@ BaseTask面向通用动作处理，Humanoid针对人形机器人的PD控制、�
     * 中距离：位置控制
     * 近距离：精确模仿
   * 动态目标更新: 通过 _global_offset 实现目标位置的动态调整
+
+### humanoid_im_mcp.py
+* 是PHC算法框架中的高级实现，它实现了MCP（Mixture of Control Primitives）——多控制基元混合的概念
+* MCP（Mixture of Control Primitives）算法思想：
+  * 将复杂的人形机器人控制分解为多个专门的控制基元（primitives）
+  * 每个基元负责特定类型的动作（如走路、跑步、转向等）
+  * 通过权重混合不同基元的输出，实现流畅的动作转换
+* init：MCP环境初始化，MCP核心配置
+  * 控制基元数量
+  * 混合策略：离散混合（硬切换，某一时刻只使用一个基元） vs 连续混合（软混合：同时使用多个基元）
+  * 网络架构：是否使用PNN，以及是否启用侧向连接（基元间信息交换）
+    * PNN架构特点：
+      * 渐进式学习: 每个基元逐步学习，保留之前的知识
+      * 侧向连接: has_lateral=True 时，基元间可以共享信息
+      * 防止遗忘: 新基元训练时不会破坏已学习的基元
+* _setup_character_props：动作维度重定义，**动作维度变为基元数量**
+  * 标准PHC: num_actions = num_dof（关节数，如kepler的28个关节）
+  * MCP: num_actions = num_prim（基元数，如3个基元）
+  * 意义：
+    * 传统控制：直接输出关节动作
+    * MCP控制：输出基元权重
+* get_task_obs_size_detail：观测信息扩展
+  * 为上层控制器提供基元数量信息，用于权重维度设置
+* step：MCP核心执行函数
+  * 观测归一化，使用训练时的统计信息归一化观测，obs_buf 来自HumanoidIm的复合观测计算
+    * AMP观测：基于fit_smpl_motion.py处理的AMASS数据
+    * PHC任务观测：目标位置、进度、未来轨迹等
+    * 机器人状态：基于kepler_fitting.yaml/unitree_g1_fitting.yaml的关节映射
+  * 权重处理策略：离散模式——选择权重最大的基元（硬切换）；连续模式——连续混合（平滑过渡）
+  * 基元动作生成和混合：PNN模式——渐进式神经网络；标准模式——独立的actor网络
+    * 对于每个环境i和每个关节j：  
+      action[i,j] = Σ(k=0 to num_prim-1) weights[i,k] * primitive_action[i,k,j]
+  * MLP旁路（可选）：完全绕过基元混合，直接使用传统MLP
+  * 标准PHC执行流程：
+    * 应用混合后的动作到机器人
+    * 物理仿真步进
+    * 计算奖励和下一步观测
+
+### common_agent.py
+* 核心作用：
+  * 强化学习训练引擎：基于PPO算法实现策略优化
+  * 数据流管理：处理从环境到网络的数据传递
+  * 模型管理：网络初始化、保存、加载
+  * 训练监控：性能指标记录和可视化
+* init：强化学习智能体初始化
+  * 配置加载和网络构建
+  * 观测归一化设置
+    * 处理来自 HumanoidIm 的复合观测（AMP观测+任务观测）
+    * 确保不同尺度的观测（位置、角度、速度）在相同范围内
+* init_tensors：经验缓冲区初始化
+  * 经验回放：为PPO算法准备存储空间
+  * 时序数据：存储(s, a, r, s')四元组用于策略优化
+* train：主训练循环
+  * 数据收集阶段
+  * 策略优化阶段
+  * 性能监控
+* play_steps：环境交互数据收集
+  * 观测获取：obs包含来自HumanoidIm的复合观测（AMP观测+任务观测）与环境内部状态
+  * 动作执行
+  * 奖励计算
+* get_action_values：策略网络前向传播
+  * 网络输出解析包含：动作输出、状态价值函数、动作对数概率、动作均值（连续动作）、动作标准差
+  * calc_gradients：PPO损失计算和反向传播
+    * 计算Actor损失（策略梯度）
+    * 计算Critic损失（价值函数）
+    * 计算边界损失（动作约束）
+* _actor_loss：Actor损失（策略优化）
+* _critic_loss：Critic损失（价值函数优化）
+* discount_values：GAE优势函数计算
+  * 优势函数：A(s,a) = Q(s,a) - V(s)
+  * 减少方差：通过λ参数平衡偏差和方差
+  * 时序差分：δ = r + γV(s') - V(s)
+* prepare_dataset：训练数据准备
+* _setup_action_space：动作空间设置
+  * 对于MCP：actions_num = num_primitives
+  * 对于标准PHC：actions_num = num_dof
+* bound_loss：动作边界约束
+  * 防止动作超出机器人关节限制
+* 多层奖励整合：
+  * AMP自然性奖励
+  * 模仿学习奖励  
+  * 任务完成奖励
+  * 进度奖励
+* _log_train_info：训练指标记录
+  * 监控指标：
+    * 性能指标：FPS、训练时间、内存使用
+    * 学习指标：损失值、KL散度、梯度范数
+    * 任务指标：奖励、episode长度、成功率
+
+### common_player.py
+* AMASS数据 → fit_smpl_motion.py → torch_humanoid_batch.py → HumanoidIm环境 → CommonAgent(训练) → 训练完成的模型 → CommonPlayer(推理/评估) → 实际控制机器人
+* 核心作用：
+  * 推理执行器：使用训练好的PHC模型进行实际推理和控制
+  * 评估工具：评估训练模型的性能表现
+  * 演示系统：可视化展示PHC算法的控制效果
+  * 部署桥梁：连接训练阶段和实际应用
+* init：推理器初始化
+  * 与训练器的区别：
+    * 训练阶段 (CommonAgent)：focus on 学习和优化策略
+    * 推理阶段 (CommonPlayer)：focus on 使用已训练的策略
+* run：主推理循环
+* get_action：策略网络推理
+  * PHC策略网络推理过程：
+    * 观测预处理：
+      * 归一化处理（使用训练时的统计信息）
+      * 观测包含多个组件（来自fit_smpl_motion.py的AMP观测、PHC任务相关观测、历史观测）
+    * 网络前向传播：
+      * 确定性推理：直接使用均值
+      * 随机推理：从分布中采样
+    * 动作后处理：
+      * 动作裁剪到有效范围
+* env_step：环境交互
+  * 动作传递到HumanoidIm：env.step(actions) -> HumanoidIm.step() -> 物理仿真 -> 奖励计算 -> 下一步观测
+* _build_net：网络构建
+  * 网络配置适配：根据机器人类型（自由度不同）、任务类型进行调整
+* env_reset：环境重置
+  * env.reset() -> 从动作库采样初始状态 -> 设置机器人姿态（基于fit_smpl_motion.py数据） -> 重置任务目标 -> 计算初始观测
+* _setup_action_space： 动作空间设置
+* 与训练阶段的对比
+  * 训练阶段 (CommonAgent)：
+    * 目标：优化策略参数
+    * 模式：model.train()
+    * 梯度：需要计算和反向传播
+    * 探索：包含噪声的动作采样
+    * 数据：收集训练数据
+  * 推理阶段 (CommonPlayer)：
+    * 目标：执行和评估策略
+    * 模式：model.eval()
+    * 梯度：torch.no_grad()
+    * 确定性：通常使用确定性动作
+    * 应用：实际控制和性能评估
+
+### amp_agent.py
+* AMASS数据 → fit_smpl_motion.py → torch_humanoid_batch.py → HumanoidIm环境 → AMPAgent (AMP+PPO训练) → 策略网络+判别器 → 自然动作控制
+* 核心作用：
+  * AMP算法实现：结合判别器的对抗性模仿学习
+  * PPO扩展：在PPO基础上添加判别器损失和AMP奖励
+  * 数据整合：处理来自 fit_smpl_motion.py 的专家数据
+* init：AMP智能体初始化
+  * AMP特有的归一化与判别器奖励归一化
+  * 模型冻结机制，按照PHC的渐进式训练（先冻结基础模型），冻结归一化参数
+* _build_amp_buffers：AMP缓冲区构建
+  * 存储AMP观测
+  * 专家数据缓冲区（来自fit_smpl_motion.py）-_amp_obs_demo_buffer
+  * 回放缓冲区（存储智能体生成的数据）-replay_buffer_size
+* play_steps：AMP数据收集
+  * 标准PPO数据收集+AMP特有（收集AMP观测）
+* train_epoch：AMP训练主循环
+  * 数据收集（play_steps）
+  * AMP专家数据更新（_update_amp_demos）
+  * 准备AMP数据
+  * 回放数据
+  * 三类AMP数据的作用：
+    * 当前智能体生成的数据：amp_obs
+    * 来自fit_smpl_motion.py的专家数据：amp_obs_demo
+    * 历史智能体数据（稳定训练）：amp_obs_replay
+* calc_gradients：AMP核心损失计算
+  * 预处理观测数据与AMP数据
+  * 网络前向传播：PPO组件与AMP判别器输出（三类AMP数据的判别结果）
+  * 损失计算：PPO损失 AMP判别器损失 熵损失 边界损失
+* _disc_loss：AMP判别器损失核心
+  * 二元分类损失：智能体数据标记为0（假），专家数据标记为1（真）
+  * WGAN-GP梯度惩罚：梯度惩罚（确保Lipschitz约束）
+  * 正则化项：Logit正则化与权重衰减
+* _calc_amp_rewards：AMP奖励计算
+  * 负对数似然奖励
+  * 奖励归一化
+  * AMP奖励含义：
+    * 高奖励：智能体动作接近专家数据（来自fit_smpl_motion.py）
+    * 低奖励：智能体动作偏离专家数据
+    * 自动调节：通过判别器动态调整奖励信号
+* _combine_rewards：多层奖励组合（任务奖励+AMP风格奖励）
+* pre_epoch/post_epoch：训练周期管理
+  * 动态调整权重，渐进式训练调度
+  * SMPL形状重采样（对应不同的人体形状），重新加载fit_smpl_motion.py的数据
+  * 冻结归一化参数（确保训练稳定性）
+* _update_amp_demos：专家数据管理
+  * 从环境获取专家数据（基于fit_smpl_motion.py处理的AMASS数据）-_fetch_amp_obs_demo
+* freeze_state_weights/unfreeze_state_weights：状态管理函数
+* _preproc_obs：观测预处理
+  * 温度参数用途：防止训练过程中归一化参数的更新影响梯度计算的一致性
+* _store_replay_amp_obs：回放缓冲区管理
+  * 随机保留策略（避免缓冲区溢出）
+* _assemble_train_info：训练指标记录
+  * AMP特有指标disc
+  * reward_raw
+  * sym_loss
